@@ -1,0 +1,94 @@
+`timescale 1ns / 1ps
+
+module tb_Pipeline_top;
+
+    // Inputs
+    reg clk;
+    reg rst;
+
+    // Instantiate the Device Under Test (DUT)
+    Pipeline_top uut (
+        .clk(clk), 
+        .rst(rst)
+    );
+
+    // ------------------------------------------------ //
+    // Clock Generation
+    // ------------------------------------------------ //
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk; // 10ns Clock Period
+    end
+
+    // ------------------------------------------------ //
+    // Test Sequence
+    // ------------------------------------------------ //
+    initial begin
+        // 1. Initialize Inputs
+        rst = 0; // Active Low Reset in your design (rst=0 resets)
+
+        // 2. Apply Reset
+        $display("\n--- Simulation Start ---");
+        $display("Applying Reset...");
+        #10;
+        rst = 1; // Release Reset
+        $display("Reset Released. Processor Running...\n");
+
+        // 3. Print Header for the Automatic Monitor
+        $display("---------------------------------------------------------------------------------------------------------");
+        $display(" Time |  PC_F  |   Instr_D  | RegWriteM | ALU_Result_M | Result_W | x5(t0) | x6(t1) | x7(t2) | x8(s0)");
+        $display("---------------------------------------------------------------------------------------------------------");
+
+        // 4. Run Simulation for specific duration
+        // We run enough cycles for the loaded instructions to pass through the pipeline
+        #150; 
+
+        // 5. Final Verification Logic
+        $display("---------------------------------------------------------------------------------------------------------");
+        $display("\n--- Final Register Check ---");
+        
+        // Check x5 (Should be 5)
+        if (uut.decode_cyc.Register_File.Register[5] === 32'd5)
+            $display("[PASS] Register x5 contains 5");
+        else
+            $display("[FAIL] Register x5 contains %d (Expected 5)", uut.decode_cyc.Register_File.Register[5]);
+
+        // Check x6 (Should be 3)
+        if (uut.decode_cyc.Register_File.Register[6] === 32'd3)
+            $display("[PASS] Register x6 contains 3");
+        else
+            $display("[FAIL] Register x6 contains %d (Expected 3)", uut.decode_cyc.Register_File.Register[6]);
+
+        // Check x7 (Should be 5 + 3 = 8)
+        if (uut.decode_cyc.Register_File.Register[7] === 32'd8)
+            $display("[PASS] Register x7 contains 8");
+        else
+            $display("[FAIL] Register x7 contains %d (Expected 8)", uut.decode_cyc.Register_File.Register[7]);
+
+        $display("\n--- Simulation Complete ---");
+        $finish;
+    end
+
+    // ------------------------------------------------ //
+    // Automatic Signal Monitor
+    // ------------------------------------------------ //
+    // This block triggers on the falling edge of clk to capture 
+    // stable values after the positive edge updates.
+    always @(negedge clk) begin
+        if (rst == 1) begin
+            $display("%4t | %h | %h |     %b     |   %h   | %h |   %2d   |   %2d   |   %2d   |   %2d", 
+                $time, 
+                uut.fetch_cyc.Program_Counter.PC,  // Current PC
+                uut.InstrD,                        // Instruction in Decode
+                uut.RegWriteM,                     // Memory Write Enable
+                uut.ALU_ResultM,                   // ALU Output (Memory Stage)
+                uut.ResultW,                       // Writeback Result
+                uut.decode_cyc.Register_File.Register[5], // x5 Value
+                uut.decode_cyc.Register_File.Register[6], // x6 Value
+                uut.decode_cyc.Register_File.Register[7], // x7 Value
+                uut.decode_cyc.Register_File.Register[8]  // x8 Value
+            );
+        end
+    end
+
+endmodule

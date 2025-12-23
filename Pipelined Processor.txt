@@ -1,0 +1,865 @@
+// --------------------------------- //
+// Top-level Wrapper Module
+// --------------------------------- //
+module Pipeline_top(clk, rst);
+
+    // Declaration of I/O
+    input clk, rst;
+
+    // Declaration of Interim Wires
+    wire PCSrcE, RegWriteW, RegWriteE, ALUSrcE, MemWriteE, ResultSrcE, BranchE, RegWriteM, MemWriteM, ResultSrcM, ResultSrcW;
+    wire [2:0] ALUControlE;
+    wire [4:0] RD_E, RD_M, RDW;
+    wire [31:0] PCTargetE, InstrD, PCD, PCPlus4D, ResultW, RD1_E, RD2_E, Imm_Ext_E, PCE, PCPlus4E, PCPlus4M, WriteDataM, ALU_ResultM;
+    wire [31:0] PCPlus4W, ALU_ResultW, ReadDataW;
+    wire [4:0] RS1_E, RS2_E;
+    wire [1:0] ForwardBE, ForwardAE;
+    
+    // Hazard Unit Control Wires (NEW)
+    wire PCWrite, IF_ID_Write, ID_EX_Flush;
+    
+    // ResultSrcE is the MemToReg control signal for the instruction in EX
+    // It is used by the hazard unit for load-use detection
+    wire MemtoRegE = ResultSrcE; 
+
+    // Module Initiation
+    // Fetch Stage
+    fetch_cycle fetch_cyc (
+                .clk(clk),
+                .rst(rst),
+                .PCSrcE(PCSrcE),
+                .PCTargetE(PCTargetE),
+                .InstrD(InstrD),
+                .PCD(PCD),
+                .PCPlus4D(PCPlus4D),
+                .PCWrite(PCWrite),
+                .IF_ID_Write(IF_ID_Write)
+                );
+
+    // Decode Stage
+    decode_cycle decode_cyc (
+                .clk(clk),
+                .rst(rst),
+                .InstrD(InstrD),
+                .PCD(PCD),
+                .PCPlus4D(PCPlus4D),
+                .RegWriteW(RegWriteW),
+                .RDW(RDW),
+                .ResultW(ResultW),
+                .RegWriteE(RegWriteE),
+                .ALUSrcE(ALUSrcE),
+                .MemWriteE(MemWriteE),
+                .ResultSrcE(ResultSrcE),
+                .BranchE(BranchE),
+                .ALUControlE(ALUControlE),
+                .RD1_E(RD1_E),
+                .RD2_E(RD2_E),
+                .Imm_Ext_E(Imm_Ext_E),
+                .RD_E(RD_E),
+                .PCE(PCE),
+                .PCPlus4E(PCPlus4E),
+                .RS1_E(RS1_E),
+                .RS2_E(RS2_E),
+                .IF_ID_Write(IF_ID_Write),
+                .ID_EX_Flush(ID_EX_Flush)
+                );
+
+    // Execute Stage
+    execute_cycle execute_cyc (
+                .clk(clk),
+                .rst(rst),
+                .RegWriteE(RegWriteE),
+                .ALUSrcE(ALUSrcE),
+                .MemWriteE(MemWriteE),
+                .ResultSrcE(ResultSrcE),
+                .BranchE(BranchE),
+                .ALUControlE(ALUControlE),
+                .RD1_E(RD1_E),
+                .RD2_E(RD2_E),
+                .Imm_Ext_E(Imm_Ext_E),
+                .RD_E(RD_E),
+                .PCE(PCE),
+                .PCPlus4E(PCPlus4E),
+                .PCSrcE(PCSrcE),
+                .PCTargetE(PCTargetE),
+                .RegWriteM(RegWriteM),
+                .MemWriteM(MemWriteM),
+                .ResultSrcM(ResultSrcM),
+                .RD_M(RD_M),
+                .PCPlus4M(PCPlus4M),
+                .WriteDataM(WriteDataM),
+                .ALU_ResultM(ALU_ResultM),
+                .ResultW(ResultW),
+                .ForwardA_E(ForwardAE),
+                .ForwardB_E(ForwardBE)
+                // Note: ID_EX_Flush is only used in the ID stage register logic to insert a NOP.
+                );
+
+    // Memory Stage
+    memory_cycle Memory (
+                .clk(clk), 
+                .rst(rst), 
+                .RegWriteM(RegWriteM), 
+                .MemWriteM(MemWriteM), 
+                .ResultSrcM(ResultSrcM), 
+                .RD_M(RD_M), 
+                .PCPlus4M(PCPlus4M), 
+                .WriteDataM(WriteDataM), 
+                .ALU_ResultM(ALU_ResultM), 
+                .RegWriteW(RegWriteW), 
+                .ResultSrcW(ResultSrcW), 
+                .RD_W(RDW), 
+                .PCPlus4W(PCPlus4W), 
+                .ALU_ResultW(ALU_ResultW), 
+                .ReadDataW(ReadDataW)
+                );
+
+    // Write Back Stage
+    writeback_cycle WriteBack (
+                .clk(clk), 
+                .rst(rst), 
+                .ResultSrcW(ResultSrcW), 
+                .PCPlus4W(PCPlus4W), 
+                .ALU_ResultW(ALU_ResultW), 
+                .ReadDataW(ReadDataW), 
+                .ResultW(ResultW)
+                );
+
+    // Hazard Unit (Now handles Forwarding AND Stalling)
+    hazard_unit Hazard_Control (
+                .rst(rst), 
+                .RegWriteM(RegWriteM), 
+                .RegWriteW(RegWriteW), 
+                .RD_M(RD_M), 
+                .RD_W(RDW), 
+                .Rs1_E(RS1_E), 
+                .Rs2_E(RS2_E), 
+                .ForwardAE(ForwardAE), 
+                .ForwardBE(ForwardBE),
+                // Stall/Flush Logic inputs:
+                .MemtoRegE(MemtoRegE), // ResultSrcE from EX/MEM register
+                .Rs1_D(InstrD[19:15]), // Rs1 from Instruction in ID stage
+                .Rs2_D(InstrD[24:20]), // Rs2 from Instruction in ID stage
+                .RD_E(RD_E),           // Destination register from ID/EX register
+                // Stall/Flush Logic outputs:
+                .PCWrite(PCWrite),
+                .IF_ID_Write(IF_ID_Write),
+                .ID_EX_Flush(ID_EX_Flush)
+                );
+
+endmodule
+
+// --------------------------------- //
+// Control Path Modules
+// --------------------------------- //
+
+// ALU Decoder
+module ALU_Decoder(
+    input  [1:0] ALUOp,
+    input  [2:0] funct3,
+    input  [6:0] funct7,
+    input  [6:0] op,
+    output reg [2:0] ALUControl
+);
+
+    always @(*) begin
+        case (ALUOp)
+
+            2'b00: ALUControl = 3'b000; // lw, sw → ADD
+
+            2'b01: ALUControl = 3'b001; // beq → SUB
+
+            2'b10: begin
+                case (funct3)
+                    3'b000: begin
+                        // R-type SUB only
+                        if (op == 7'b0110011 && funct7[5] == 1'b1)
+                            ALUControl = 3'b001; // SUB
+                        else
+                            ALUControl = 3'b000; // ADD / ADDI
+                    end
+                    3'b010: ALUControl = 3'b101; // SLT
+                    3'b110: ALUControl = 3'b011; // OR
+                    3'b111: ALUControl = 3'b010; // AND
+                    default: ALUControl = 3'b000;
+                endcase
+            end
+
+            default: ALUControl = 3'b000;
+        endcase
+    end
+
+endmodule
+
+
+// Main Decoder
+module Main_Decoder(Op,RegWrite,ImmSrc,ALUSrc,MemWrite,ResultSrc,Branch,ALUOp);
+    input [6:0]Op;
+    output RegWrite,ALUSrc,MemWrite,ResultSrc,Branch;
+    output [1:0]ImmSrc,ALUOp;
+
+    assign RegWrite = (Op == 7'b0000011 | Op == 7'b0110011 | Op == 7'b0010011 ) ? 1'b1 : 1'b0;
+    
+    assign ImmSrc = (Op == 7'b0100011) ? 2'b01 : // S-type 
+                    (Op == 7'b1100011) ? 2'b10 : // B-type 
+                                         2'b00 ; // I-type
+                                         
+    assign ALUSrc = (Op == 7'b0000011 | Op == 7'b0100011 | Op == 7'b0010011) ? 1'b1 : 1'b0;
+    
+    assign MemWrite = (Op == 7'b0100011) ? 1'b1 : 1'b0;
+    
+    assign ResultSrc = (Op == 7'b0000011) ? 1'b1 : 1'b0; // 1 for Load (Memory Result)
+    
+    assign Branch = (Op == 7'b1100011) ? 1'b1 : 1'b0;
+    
+    // R-Type and I-Type (arithmetic/logical) use 2'b10 to check funct3
+    assign ALUOp = (Op == 7'b0110011 | Op == 7'b0010011) ? 2'b10 : 
+                   (Op == 7'b1100011) ? 2'b01 : // Branch use 2'b01 to check equality (SUB)
+                                         2'b00 ; // Load/Store use 2'b00 (ADD for address)
+endmodule
+
+// Control Unit Top
+module Control_Unit_Top(Op,RegWrite,ImmSrc,ALUSrc,MemWrite,ResultSrc,Branch,funct3,funct7,ALUControl);
+
+    input [6:0]Op,funct7;
+    input [2:0]funct3;
+    output RegWrite,ALUSrc,MemWrite,ResultSrc,Branch;
+    output [1:0]ImmSrc;
+    output [2:0]ALUControl;
+
+    wire [1:0]ALUOp;
+
+    Main_Decoder Main_Decoder(
+                .Op(Op),
+                .RegWrite(RegWrite),
+                .ImmSrc(ImmSrc),
+                .MemWrite(MemWrite),
+                .ResultSrc(ResultSrc),
+                .Branch(Branch),
+                .ALUSrc(ALUSrc),
+                .ALUOp(ALUOp)
+    );
+
+    ALU_Decoder ALU_Decoder(
+                            .ALUOp(ALUOp),
+                            .funct3(funct3),
+                            .funct7(funct7),
+                            .op(Op),
+                            .ALUControl(ALUControl)
+    );
+endmodule
+
+// --------------------------------- //
+// Datapath Modules
+// --------------------------------- //
+
+// ALU
+module ALU(
+    input  [31:0] A,
+    input  [31:0] B,
+    input  [2:0]  ALUControl,
+    output reg [31:0] Result,
+    output Carry,
+    output OverFlow,
+    output Zero,
+    output Negative
+);
+
+    wire [32:0] sum_ext;
+    wire [32:0] sub_ext;
+
+    assign sum_ext = {1'b0, A} + {1'b0, B};
+    assign sub_ext = {1'b0, A} + {1'b0, (~B + 1'b1)};
+
+    always @(*) begin
+        case (ALUControl)
+            3'b000: Result = sum_ext[31:0];           // ADD / ADDI
+            3'b001: Result = sub_ext[31:0];           // SUB
+            3'b010: Result = A & B;                   // AND
+            3'b011: Result = A | B;                   // OR
+            3'b101: Result = ($signed(A) < $signed(B)) ? 32'd1 : 32'd0; // SLT
+            default: Result = 32'd0;
+        endcase
+    end
+
+    assign Carry    = (ALUControl == 3'b000) ? sum_ext[32] :
+                      (ALUControl == 3'b001) ? sub_ext[32] : 1'b0;
+
+    assign OverFlow = (ALUControl == 3'b000) ?
+                      (~(A[31] ^ B[31]) & (A[31] ^ Result[31])) :
+                      (ALUControl == 3'b001) ?
+                      ((A[31] ^ B[31]) & (A[31] ^ Result[31])) : 1'b0;
+
+    assign Zero      = (Result == 32'd0);
+    assign Negative = Result[31];
+
+endmodule
+
+
+// Register File
+module Register_File(clk,rst,WE3,WD3,A1,A2,A3,RD1,RD2);
+
+    input clk,rst,WE3;
+    input [4:0]A1,A2,A3;
+    input [31:0]WD3;
+    output [31:0]RD1,RD2;
+
+    reg [31:0] Register [31:0];
+
+    always @ (posedge clk)
+    begin
+        // WE3 enabled and not writing to Register 0
+        if(WE3 & (A3 != 5'h00))
+            Register[A3] <= WD3;
+    end
+
+    assign RD1 = (rst==1'b0) ? 32'd0 : Register[A1];
+    assign RD2 = (rst==1'b0) ? 32'd0 : Register[A2];
+
+    integer i;
+    initial begin
+        for(i=0; i<32; i=i+1)
+            Register[i] = 32'h00000000;
+    end
+
+endmodule
+
+// Data Memory
+module Data_Memory(clk,rst,WE,WD,A,RD);
+
+    input clk,rst,WE;
+    input [31:0]A,WD;
+    output [31:0]RD;
+
+    reg [31:0] mem [1023:0];
+
+    always @ (posedge clk)
+    begin
+        if(WE)
+            // Converted byte address A to word address A[31:2]
+            mem[A[31:2]] <= WD;
+    end
+
+    // Converted byte address A to word address A[31:2]
+    assign RD = (~rst) ? 32'd0 : mem[A[31:2]];
+
+    initial begin
+        mem[0] = 32'h00000000;
+    end
+
+endmodule
+
+// Sign Extend
+module Sign_Extend (In,ImmSrc,Imm_Ext);
+    input [31:0] In;
+    input [1:0] ImmSrc;
+    output [31:0] Imm_Ext;
+
+    // I-Type (lw, addi)
+    assign Imm_Ext = (ImmSrc == 2'b00) ? {{20{In[31]}},In[31:20]} : 
+                     // S-Type (sw)
+                     (ImmSrc == 2'b01) ? {{20{In[31]}},In[31:25],In[11:7]} : 
+                     // B-Type (beq)
+                     (ImmSrc == 2'b10) ? {{20{In[31]}}, In[7], In[30:25], In[11:8], 1'b0} :
+                     32'h00000000; 
+endmodule
+
+// Mux
+module Mux (a,b,s,c);
+    input [31:0]a,b;
+    input s;
+    output [31:0]c;
+    assign c = (~s) ? a : b ;
+endmodule
+
+module Mux_3_by_1 (a,b,c,s,d);
+    input [31:0] a,b,c;
+    input [1:0] s;
+    output [31:0] d;
+    assign d = (s == 2'b00) ? a : (s == 2'b01) ? b : (s == 2'b10) ? c : 32'h00000000;
+endmodule
+
+// PC Module (MODIFIED for PCWrite)
+module PC_Module(clk,rst,PC,PC_Next, PCWrite);
+    input clk,rst, PCWrite;
+    input [31:0]PC_Next;
+    output [31:0]PC;
+    reg [31:0]PC;
+
+    always @(posedge clk)
+    begin
+        if(rst == 1'b0)
+            PC <= {32{1'b0}};
+        // Only update PC if PCWrite is high (i.e., no stall)
+        else if (PCWrite == 1'b1)
+            PC <= PC_Next;
+    end
+endmodule
+
+// PC Adder
+module PC_Adder (a,b,c);
+    input [31:0]a,b;
+    output [31:0]c;
+    assign c = a + b;
+endmodule
+
+// --------------------------------- //
+// Pipeline Stage Modules
+// --------------------------------- //
+
+// Fetch Cycle (MODIFIED for PCWrite and IF_ID_Write)
+module fetch_cycle(clk, rst, PCSrcE, PCTargetE, InstrD, PCD, PCPlus4D, PCWrite, IF_ID_Write);
+
+    // Declare input & outputs
+    input clk, rst, PCSrcE, PCWrite, IF_ID_Write;
+    input [31:0] PCTargetE;
+    output [31:0] InstrD;
+    output [31:0] PCD, PCPlus4D;
+
+    // Declaring interim wires
+    wire [31:0] PC_F, PCF, PCPlus4F;
+    wire [31:0] InstrF;
+
+    // Declaration of Register
+    reg [31:0] InstrF_reg;
+    reg [31:0] PCF_reg, PCPlus4F_reg;
+
+    // Initiation of Modules
+    // Declare PC Mux
+    Mux PC_MUX (.a(PCPlus4F),
+                .b(PCTargetE),
+                .s(PCSrcE),
+                .c(PC_F)
+                );
+
+    // Declare PC Counter
+    PC_Module Program_Counter (
+                .clk(clk),
+                .rst(rst),
+                .PC(PCF),
+                .PC_Next(PC_F),
+                .PCWrite(PCWrite)
+                );
+
+    // Declare Instruction Memory
+    Instruction_Memory IMEM (
+                .rst(rst),
+                .A(PCF),
+                .RD(InstrF)
+                );
+
+    // Declare PC adder
+    PC_Adder PC_adder (
+                .a(PCF),
+                .b(32'h00000004),
+                .c(PCPlus4F)
+                );
+
+    // Fetch Cycle Register Logic (IF/ID Register)
+    always @(posedge clk or negedge rst) begin
+        if(rst == 1'b0) begin
+            InstrF_reg <= 32'h00000000;
+            PCF_reg <= 32'h00000000;
+            PCPlus4F_reg <= 32'h00000000;
+        end
+        // Only write IF/ID registers if IF_ID_Write is high (i.e., no stall)
+        else if (IF_ID_Write == 1'b1) begin
+            InstrF_reg <= InstrF;
+            PCF_reg <= PCF;
+            PCPlus4F_reg <= PCPlus4F;
+        end
+        // If IF_ID_Write is low (stall), registers hold their old values.
+    end
+
+    // Assigning Registers Value to the Output port
+    assign  InstrD = (rst == 1'b0) ? 32'h00000000 : InstrF_reg;
+    assign  PCD = (rst == 1'b0) ? 32'h00000000 : PCF_reg;
+    assign  PCPlus4D = (rst == 1'b0) ? 32'h00000000 : PCPlus4F_reg;
+
+endmodule
+
+// Decode Cycle (MODIFIED for IF_ID_Write and ID_EX_Flush)
+module decode_cycle(clk, rst, InstrD, PCD, PCPlus4D, RegWriteW, RDW, ResultW, RegWriteE, ALUSrcE, MemWriteE, ResultSrcE,
+    BranchE,  ALUControlE, RD1_E, RD2_E, Imm_Ext_E, RD_E, PCE, PCPlus4E, RS1_E, RS2_E, IF_ID_Write, ID_EX_Flush);
+
+    // Declaring I/O
+    input clk, rst, RegWriteW, IF_ID_Write, ID_EX_Flush;
+    input [4:0] RDW;
+    input [31:0] InstrD, PCD, PCPlus4D, ResultW;
+
+    output RegWriteE,ALUSrcE,MemWriteE,ResultSrcE,BranchE;
+    output [2:0] ALUControlE;
+    output [31:0] RD1_E, RD2_E, Imm_Ext_E;
+    output [4:0] RS1_E, RS2_E, RD_E;
+    output [31:0] PCE, PCPlus4E;
+
+    // Declare Interim Wires
+    wire RegWriteD,ALUSrcD,MemWriteD,ResultSrcD,BranchD;
+    wire [1:0] ImmSrcD;
+    wire [2:0] ALUControlD;
+    wire [31:0] RD1_D, RD2_D, Imm_Ext_D;
+
+    // Declaration of Interim Register (ID/EX Register)
+    reg RegWriteD_r,ALUSrcD_r,MemWriteD_r,ResultSrcD_r,BranchD_r;
+    reg [2:0] ALUControlD_r;
+    reg [31:0] RD1_D_r, RD2_D_r, Imm_Ext_D_r;
+    reg [4:0] RD_D_r, RS1_D_r, RS2_D_r;
+    reg [31:0] PCD_r, PCPlus4D_r;
+
+    // Initiate the modules
+    // Control Unit
+    Control_Unit_Top Control_Unit (
+                .Op(InstrD[6:0]),
+                .RegWrite(RegWriteD),
+                .ImmSrc(ImmSrcD),
+                .ALUSrc(ALUSrcD),
+                .MemWrite(MemWriteD),
+                .ResultSrc(ResultSrcD),
+                .Branch(BranchD),
+                .funct3(InstrD[14:12]),
+                .funct7(InstrD[31:25]),
+                .ALUControl(ALUControlD)
+                );
+
+    Register_File Register_File (
+                .clk(clk),
+                .rst(rst),
+                .WE3(RegWriteW),
+                .WD3(ResultW),
+                .A1(InstrD[19:15]),
+                .A2(InstrD[24:20]),
+                .A3(RDW),
+                .RD1(RD1_D),
+                .RD2(RD2_D)
+                );
+
+    Sign_Extend Sign_Extend (
+                .In(InstrD),
+                .ImmSrc(ImmSrcD),
+                .Imm_Ext(Imm_Ext_D)
+                );
+
+    // Register Logic (ID/EX Register)
+    always @(posedge clk or negedge rst) begin
+        if(rst == 1'b0) begin
+            RegWriteD_r <= 1'b0;
+            ALUSrcD_r <= 1'b0;
+            MemWriteD_r <= 1'b0;
+            ResultSrcD_r <= 1'b0;
+            BranchD_r <= 1'b0;
+            ALUControlD_r <= 3'b000;
+            RD1_D_r <= 32'h00000000; 
+            RD2_D_r <= 32'h00000000; 
+            Imm_Ext_D_r <= 32'h00000000;
+            RD_D_r <= 5'h00;
+            PCD_r <= 32'h00000000; 
+            PCPlus4D_r <= 32'h00000000;
+            RS1_D_r <= 5'h00;
+            RS2_D_r <= 5'h00;
+        end
+        else if (ID_EX_Flush == 1'b1) begin // Stall: Insert a bubble (NOP)
+            // Force all control signals to 0 (NOP), effectively disabling writeback and memory access
+            RegWriteD_r <= 1'b0;
+            MemWriteD_r <= 1'b0;
+            ResultSrcD_r <= 1'b0;
+            BranchD_r <= 1'b0;
+            ALUSrcD_r <= 1'b0;
+            ALUControlD_r <= 3'b000; 
+            // The destination register must be x0 to prevent accidental write
+            RD_D_r <= 5'h00; 
+            
+            // Other fields are don't care but are held
+            RD1_D_r <= RD1_D_r; 
+            RD2_D_r <= RD2_D_r; 
+            Imm_Ext_D_r <= Imm_Ext_D_r;
+            PCD_r <= PCD_r; 
+            PCPlus4D_r <= PCPlus4D_r;
+            RS1_D_r <= RS1_D_r;
+            RS2_D_r <= RS2_D_r;
+
+        end
+        else begin // Normal operation
+            RegWriteD_r <= RegWriteD;
+            ALUSrcD_r <= ALUSrcD;
+            MemWriteD_r <= MemWriteD;
+            ResultSrcD_r <= ResultSrcD;
+            BranchD_r <= BranchD;
+            ALUControlD_r <= ALUControlD;
+            RD1_D_r <= RD1_D; 
+            RD2_D_r <= RD2_D; 
+            Imm_Ext_D_r <= Imm_Ext_D;
+            RD_D_r <= InstrD[11:7];
+            PCD_r <= PCD; 
+            PCPlus4D_r <= PCPlus4D;
+            RS1_D_r <= InstrD[19:15];
+            RS2_D_r <= InstrD[24:20];
+        end
+    end
+
+    // Output assignments
+    assign RegWriteE = RegWriteD_r;
+    assign ALUSrcE = ALUSrcD_r;
+    assign MemWriteE = MemWriteD_r;
+    assign ResultSrcE = ResultSrcD_r;
+    assign BranchE = BranchD_r;
+    assign ALUControlE = ALUControlD_r;
+    assign RD1_E = RD1_D_r;
+    assign RD2_E = RD2_D_r;
+    assign Imm_Ext_E = Imm_Ext_D_r;
+    assign RD_E = RD_D_r;
+    assign PCE = PCD_r;
+    assign PCPlus4E = PCPlus4D_r;
+    assign RS1_E = RS1_D_r;
+    assign RS2_E = RS2_D_r;
+
+endmodule
+
+// Execute Cycle (UNCHANGED for this type of hazard)
+module execute_cycle(clk, rst, RegWriteE, ALUSrcE, MemWriteE, ResultSrcE, BranchE, ALUControlE, 
+    RD1_E, RD2_E, Imm_Ext_E, RD_E, PCE, PCPlus4E, PCSrcE, PCTargetE, RegWriteM, MemWriteM, ResultSrcM, RD_M, PCPlus4M, WriteDataM, ALU_ResultM, ResultW, ForwardA_E, ForwardB_E);
+
+    // Declaration I/Os
+    input clk, rst, RegWriteE,ALUSrcE,MemWriteE,ResultSrcE,BranchE;
+    input [2:0] ALUControlE;
+    input [31:0] RD1_E, RD2_E, Imm_Ext_E;
+    input [4:0] RD_E;
+    input [31:0] PCE, PCPlus4E;
+    input [31:0] ResultW;
+    input [1:0] ForwardA_E, ForwardB_E;
+
+    output PCSrcE, RegWriteM, MemWriteM, ResultSrcM;
+    output [4:0] RD_M; 
+    output [31:0] PCPlus4M, WriteDataM, ALU_ResultM;
+    output [31:0] PCTargetE;
+
+    // Declaration of Interim Wires
+    wire [31:0] Src_A, Src_B_interim, Src_B;
+    wire [31:0] ResultE;
+    wire ZeroE;
+
+    // Declaration of Register
+    reg RegWriteE_r, MemWriteE_r, ResultSrcE_r;
+    reg [4:0] RD_E_r;
+    reg [31:0] PCPlus4E_r, RD2_E_r, ResultE_r;
+
+    // Declaration of Modules
+    Mux_3_by_1 ForwardA (
+                .a(RD1_E),
+                .b(ResultW),
+                .c(ALU_ResultM),
+                .s(ForwardA_E),
+                .d(Src_A)
+                );
+
+    Mux_3_by_1 ForwardB (
+                .a(RD2_E),
+                .b(ResultW),
+                .c(ALU_ResultM),
+                .s(ForwardB_E),
+                .d(Src_B_interim)
+                );
+
+    // ALU Src Mux
+    Mux alu_src_mux (
+                .a(Src_B_interim),
+                .b(Imm_Ext_E),
+                .s(ALUSrcE),
+                .c(Src_B)
+                );
+
+    // ALU Unit
+    ALU alu (
+                .A(Src_A),
+                .B(Src_B),
+                .Result(ResultE),
+                .ALUControl(ALUControlE),
+                .OverFlow(),
+                .Carry(),
+                .Zero(ZeroE),
+                .Negative()
+                );
+
+    // Adder (for branch target calculation)
+    PC_Adder branch_adder (
+                .a(PCE),
+                .b(Imm_Ext_E),
+                .c(PCTargetE)
+                );
+
+    // Register Logic (EX/MEM Register)
+    always @(posedge clk or negedge rst) begin
+        if(rst == 1'b0) begin
+            RegWriteE_r <= 1'b0; 
+            MemWriteE_r <= 1'b0; 
+            ResultSrcE_r <= 1'b0;
+            RD_E_r <= 5'h00;
+            PCPlus4E_r <= 32'h00000000; 
+            RD2_E_r <= 32'h00000000; 
+            ResultE_r <= 32'h00000000;
+        end
+        else begin
+            RegWriteE_r <= RegWriteE; 
+            MemWriteE_r <= MemWriteE; 
+            ResultSrcE_r <= ResultSrcE;
+            RD_E_r <= RD_E;
+            PCPlus4E_r <= PCPlus4E; 
+            RD2_E_r <= Src_B_interim; 
+            ResultE_r <= ResultE;
+        end
+    end
+
+    // Output Assignments
+    // Branch taken condition
+    assign PCSrcE = ZeroE &  BranchE;
+    assign RegWriteM = RegWriteE_r;
+    assign MemWriteM = MemWriteE_r;
+    assign ResultSrcM = ResultSrcE_r;
+    assign RD_M = RD_E_r;
+    assign PCPlus4M = PCPlus4E_r;
+    assign WriteDataM = RD2_E_r;
+    assign ALU_ResultM = ResultE_r;
+
+endmodule
+
+// Memory Cycle (MEM/WB Register)
+module memory_cycle(clk, rst, RegWriteM, MemWriteM, ResultSrcM, RD_M, PCPlus4M, WriteDataM, 
+    ALU_ResultM, RegWriteW, ResultSrcW, RD_W, PCPlus4W, ALU_ResultW, ReadDataW);
+    
+    // Declaration of I/Os
+    input clk, rst, RegWriteM, MemWriteM, ResultSrcM;
+    input [4:0] RD_M; 
+    input [31:0] PCPlus4M, WriteDataM, ALU_ResultM;
+
+    output RegWriteW, ResultSrcW; 
+    output [4:0] RD_W;
+    output [31:0] PCPlus4W, ALU_ResultW, ReadDataW;
+
+    // Declaration of Interim Wires
+    wire [31:0] ReadDataM;
+
+    // Declaration of Interim Registers
+    reg RegWriteM_r, ResultSrcM_r;
+    reg [4:0] RD_M_r;
+    reg [31:0] PCPlus4M_r, ALU_ResultM_r, ReadDataM_r;
+
+    // Declaration of Module Initiation
+    Data_Memory dmem (
+                         .clk(clk),
+                         .rst(rst),
+                         .WE(MemWriteM),
+                         .WD(WriteDataM),
+                         .A(ALU_ResultM),
+                         .RD(ReadDataM)
+                     );
+
+    // Memory Stage Register Logic (MEM/WB Register)
+    always @(posedge clk or negedge rst) begin
+        if (rst == 1'b0) begin
+            RegWriteM_r <= 1'b0; 
+            ResultSrcM_r <= 1'b0;
+            RD_M_r <= 5'h00;
+            PCPlus4M_r <= 32'h00000000; 
+            ALU_ResultM_r <= 32'h00000000; 
+            ReadDataM_r <= 32'h00000000;
+        end
+        else begin
+            RegWriteM_r <= RegWriteM; 
+            ResultSrcM_r <= ResultSrcM;
+            RD_M_r <= RD_M;
+            PCPlus4M_r <= PCPlus4M; 
+            ALU_ResultM_r <= ALU_ResultM; 
+            ReadDataM_r <= ReadDataM;
+        end
+    end 
+
+    // Declaration of output assignments
+    assign RegWriteW = RegWriteM_r;
+    assign ResultSrcW = ResultSrcM_r;
+    assign RD_W = RD_M_r;
+    assign PCPlus4W = PCPlus4M_r;
+    assign ALU_ResultW = ALU_ResultM_r;
+    assign ReadDataW = ReadDataM_r;
+
+endmodule
+
+// Writeback Cycle
+module writeback_cycle(clk, rst, ResultSrcW, PCPlus4W, ALU_ResultW, ReadDataW, ResultW);
+
+    // Declaration of IOs
+    input clk, rst, ResultSrcW;
+    input [31:0] PCPlus4W, ALU_ResultW, ReadDataW;
+    output [31:0] ResultW;
+
+    // Declaration of Module
+    Mux result_mux (   
+                     .a(ALU_ResultW),  // Result from ALU
+                     .b(ReadDataW),    // Result from Memory (for Load)
+                     .s(ResultSrcW),
+                     .c(ResultW)
+                     );
+endmodule
+
+// Hazard Unit (MODIFIED to include Stall/Flush Logic)
+module hazard_unit(rst, RegWriteM, RegWriteW, RD_M, RD_W, Rs1_E, Rs2_E, ForwardAE, ForwardBE, 
+    MemtoRegE, Rs1_D, Rs2_D, RD_E, PCWrite, IF_ID_Write, ID_EX_Flush);
+
+    // Declaration of I/Os
+    input rst, RegWriteM, RegWriteW;
+    input [4:0] RD_M, RD_W, Rs1_E, Rs2_E;
+    output [1:0] ForwardAE, ForwardBE;
+    
+    // NEW Hazard Detection/Stall Control Signals
+    input MemtoRegE; // ResultSrcE from EX/MEM register, 1 for Load Word
+    input [4:0] Rs1_D, Rs2_D, RD_E; // Rs1, Rs2 from Instruction in ID, RD from EX/MEM
+
+    output PCWrite, IF_ID_Write, ID_EX_Flush;
+
+    // 1. Forwarding Logic (Handles non-load-use data hazards)
+    assign ForwardAE = (rst == 1'b0) ? 2'b00 : 
+                        // Forward from MEM stage to EX stage (2'b10 - highest priority)
+                        ((RegWriteM == 1'b1) & (RD_M != 5'h00) & (RD_M == Rs1_E)) ? 2'b10 : 
+                        // Forward from WB stage to EX stage (2'b01)
+                        ((RegWriteW == 1'b1) & (RD_W != 5'h00) & (RD_W == Rs1_E)) ? 2'b01 : 2'b00;
+
+    assign ForwardBE = (rst == 1'b0) ? 2'b00 : 
+                        // Forward from MEM stage to EX stage (2'b10 - highest priority)
+                        ((RegWriteM == 1'b1) & (RD_M != 5'h00) & (RD_M == Rs2_E)) ? 2'b10 : 
+                        // Forward from WB stage to EX stage (2'b01)
+                        ((RegWriteW == 1'b1) & (RD_W != 5'h00) & (RD_W == Rs2_E)) ? 2'b01 : 2'b00;
+
+    // 2. Stall/Flush Logic (Handles Load-Use Hazard)
+    // Hazard if: (Load in EX stage) AND (non-x0 destination) AND (ID source == EX destination)
+    wire load_use_hazard;
+    assign load_use_hazard = (MemtoRegE == 1'b1) & (RD_E != 5'h00) & 
+                             ((RD_E == Rs1_D) | (RD_E == Rs2_D));
+
+    // Control Signals: Stall only on Load-Use Hazard
+    assign PCWrite = (rst == 1'b0) ? 1'b0 : ~load_use_hazard;     // Freeze PC on stall
+    assign IF_ID_Write = (rst == 1'b0) ? 1'b0 : ~load_use_hazard; // Freeze IF/ID Reg on stall
+    assign ID_EX_Flush = (rst == 1'b0) ? 1'b0 : load_use_hazard;  // Insert NOP (bubble) in EX stage on stall
+
+endmodule
+
+// Instruction Memory
+module Instruction_Memory(rst,A,RD);
+
+    input rst;
+    input [31:0]A;
+    output [31:0]RD;
+
+    reg [31:0] mem [1023:0];
+    
+    // A is Byte Address, mem is word address. 
+    assign RD = (rst == 1'b0) ? {32{1'b0}} : mem[A[31:2]];
+
+    initial begin
+        mem[0] = 32'h00200393; // addi x7, x0, 2
+        mem[1] = 32'h12300313; // addi x6, x0, 0x123
+        mem[2] = 32'h00732023; // sw x7, 0(x6)
+        mem[3] = 32'h00032403; // lw x8, 0(x6)
+        mem[4] = 32'h007404B3; // add x9, x8, x7  <-- Load-Use Hazard on x8
+        mem[5] = 32'h00A00213; // addi x4, x0, 10
+        mem[6] = 32'h00149493; // slli x9, x9, 1
+    end
+
+endmodule
